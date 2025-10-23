@@ -66,27 +66,31 @@ def get_data(country_code, data_date_range, indicators_dict):
         
         # Check for empty data before processing
         if df_wide.empty:
-            return None, None  # Return (None, None) to signal "no data"
+            return None, None
 
         # This turns the index (economy, time) into columns
         df_wide = df_wide.reset_index()
 
-        # --- FINAL FIX (v13) ---
-        # This fixes the "invalid literal for int() '66.3'" error.
-        # We must rename EXPLICITLY by name, not by position.
+        # Rename EXPLICITLY by name
         rename_map = {
             'economy': 'Country',
             'time': 'TimeStr'  # Rename the 'time' column to 'TimeStr'
         }
         df_wide = df_wide.rename(columns=rename_map)
         
+        # --- FINAL FIX (v14) ---
+        # This fixes the "int('nan')" error.
+        # We must drop rows where the time is missing (NaN)
+        # before we try to convert it.
+        df_wide = df_wide.dropna(subset=['TimeStr'])
+        # --- END FINAL FIX ---
+
         # Now we safely clean the 'TimeStr' column
         # 1. Force it to be a string
         df_wide['TimeStr'] = df_wide['TimeStr'].astype(str)
         
         # 2. Now we can safely replace 'YR' and convert to int
         df_wide['Year'] = df_wide['TimeStr'].str.replace('YR', '').astype(int)
-        # --- END FINAL FIX ---
 
         # Melt from wide to long
         df_long = df_wide.melt(
@@ -121,7 +125,7 @@ def get_data(country_code, data_date_range, indicators_dict):
 
 # --- 4. Sidebar Widget Implementation ---
 country_names, country_codes = get_countries()
-current_year = datetime.now().year
+current_.year = datetime.now().year
 
 try:
     default_country_index = country_names.index("India")
