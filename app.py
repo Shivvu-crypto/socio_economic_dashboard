@@ -1,45 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import wbdata  # World Bank data API client
-from datetime import datetime
-
-# --- 1. App Configuration ---
-# Set the page title, icon, and layout
-st.set_page_config(
-    page_title="Socio-Economic Dashboard",
-    page_icon="📈",
-    layout="wide"  # Use the full width of the page
-)
-
-# --- 2. Title and Introduction ---
-st.title("📈 Socio-Economic Insights Dashboard")
-st.write(
-    "An interactive tool to analyze and correlate data from the World Bank. "
-    "Select a country, two indicators, and a year range to begin."
-)
-
-# --- 3. Sidebar (User Controls) ---
-st.sidebar.header("Dashboard Controls")
-
-# Define the indicators you want to offer in a dictionary
-# Key: Readable Name, Value: World …
-[1:58 pm, 23/10/2025] Shivam: AttributeError: module 'wbdata' has no attribute 'search_countries'
-
-File "D:\socio_economic_dashboard\venv\Lib\site-packages\streamlit\runtime\scriptrunner\exec_code.py", line 128, in exec_func_with_error_handling
-    result = func()
-File "D:\socio_economic_dashboard\venv\Lib\site-packages\streamlit\runtime\scriptrunner\script_runner.py", line 669, in code_to_exec
-    exec(code, module._dict_)  # noqa: S102
-    ~~^^^^^^^^^^^^^^^^^^^^^^^
-File "D:\socio_economic_dashboard\app.py", line 86, in <module>
-    country_names, country_codes = get_countries()
-                                   ~~~~~^^
-File "D:\socio_economic_dashboard\venv\Lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 227, in _call_
-    return self._get_or_create_cached_value(args…
-[2:02 pm, 23/10/2025] Shivam: import streamlit as st
-import pandas as pd
-import plotly.express as px
-import wbgapi as wb  # <-- We are using the new library 'wbgapi'
+import wbgapi as wb
 from datetime import datetime
 
 # --- 1. App Configuration ---
@@ -77,11 +39,8 @@ indicator_names = list(INDICATORS_DB.keys())
 def get_countries():
     """Fetches and formats a list of countries and their codes from wbgapi."""
     
-    # -------------------------------------------------------------------
-    # THIS IS THE NEW, CORRECTED FUNCTION using wbgapi
     # wb.economy.list() gets all economies (countries and regions)
     countries = wb.economy.list()
-    # -------------------------------------------------------------------
 
     # Filter out regions or aggregates that aren't countries
     countries = [country for country in countries if country.get('region') != "Aggregates"]
@@ -100,29 +59,24 @@ def get_data(country_code, data_date_range, indicators_dict):
         # Get the API codes from our indicator dictionary
         indicator_codes = list(indicators_dict.values())
         
-        # -------------------------------------------------------------------
-        # THIS IS THE NEW, CORRECTED DATA-FETCHING FUNCTION
         # wbgapi returns data in a "wide" format, so we must process it
         df_wide = wb.data.DataFrame(
             indicator_codes,
             country_code,
             time=data_date_range
         )
-        # -------------------------------------------------------------------
 
         # --- Data Processing to make it usable ---
         # 1. Reset index to get 'economy' and 'time' as columns
         df_wide = df_wide.reset_index()
         
         # 2. "Melt" the DataFrame from wide to long format
-        # This turns columns like 'YR2000', 'YR2001' into rows
         df_long = df_wide.melt(id_vars=['economy', 'series'], var_name='Year', value_name='Value')
         
         # 3. Clean the 'Year' column (e.g., 'YR2000' -> 2000)
         df_long['Year'] = df_long['Year'].str.replace('YR', '').astype(int)
         
         # 4. "Pivot" the table to get indicators as columns
-        # This is what we need for Plotly
         df_final = df_long.pivot(
             index=['economy', 'Year'],
             columns='series',
@@ -130,7 +84,6 @@ def get_data(country_code, data_date_range, indicators_dict):
         ).reset_index()
 
         # Rename columns from API codes to readable names
-        # Create a reverse map: {"NY.GDP...": "GDP per capita..."}
         reverse_indicator_map = {v: k for k, v in indicators_dict.items()}
         df_final = df_final.rename(columns=reverse_indicator_map)
         
@@ -184,12 +137,11 @@ country_code = country_codes[selected_country_name]
 
 # Create the dictionary of only the indicators we want to fetch
 indicators_to_fetch = {
-    indicator_1_name: INDICATORS_DB[indicator_1_name],
+    indicator_1_name: INDICATORSDB[indicator_1_name],
     indicator_2_name: INDICATORS_DB[indicator_2_name]
 }
 
 # Create the date range (e.g., range(2000, 2024))
-# wbgapi uses a range, which is exclusive of the end year, so add 1
 data_date_range = range(start_year, end_year + 1)
 
 # Call the data fetching function
@@ -248,5 +200,3 @@ else:
     
     with st.expander("Show Raw Data Table"):
         st.dataframe(data)
-
-
