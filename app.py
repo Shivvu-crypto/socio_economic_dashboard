@@ -68,23 +68,23 @@ def get_data(country_code, data_date_range, indicators_dict):
         if df_wide.empty:
             return None, None  # Return (None, None) to signal "no data"
 
+        # This turns the index (economy, time) into columns
         df_wide = df_wide.reset_index()
 
-        # Robustly rename columns
+        # --- FINAL FIX (v13) ---
+        # This fixes the "invalid literal for int() '66.3'" error.
+        # We must rename EXPLICITLY by name, not by position.
         rename_map = {
-            df_wide.columns[0]: 'Country',
-            df_wide.columns[1]: 'TimeStr'  # Rename to 'TimeStr' first
+            'economy': 'Country',
+            'time': 'TimeStr'  # Rename the 'time' column to 'TimeStr'
         }
         df_wide = df_wide.rename(columns=rename_map)
         
-        # --- FINAL FIX (v12) ---
-        # This fixes the deep crash (ValueError/str accessor error)
-        # The 'TimeStr' column can be 'YR2000' (text) or '2000' (numeric)
-        
-        # 1. Force the 'TimeStr' column to be a string, no matter what.
+        # Now we safely clean the 'TimeStr' column
+        # 1. Force it to be a string
         df_wide['TimeStr'] = df_wide['TimeStr'].astype(str)
         
-        # 2. Now that we are 100% sure it's a string, we can safely replace 'YR'
+        # 2. Now we can safely replace 'YR' and convert to int
         df_wide['Year'] = df_wide['TimeStr'].str.replace('YR', '').astype(int)
         # --- END FINAL FIX ---
 
@@ -169,7 +169,6 @@ indicators_to_fetch = {
 data_date_range = range(start_year, end_year + 1)
 
 # Call our robust data fetching function
-# This is line 188 (approx)
 data, error = get_data(country_code, data_date_range, indicators_to_fetch)
 
 # --- 6. Main Page Display (Charts and Data) ---
