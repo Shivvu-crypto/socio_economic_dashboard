@@ -1,139 +1,250 @@
-import asyncio
-import aiohttp
-import io
+[1:54 pm, 23/10/2025] Shivam: import streamlit as st
 import pandas as pd
 import plotly.express as px
-from flask import Flask, render_template, request
-import json # Import the json library
+import wbdata  # World Bank data API client
+from datetime import datetime
 
-# --- Block 1: Setup ---
-app = Flask(__name__)
+# --- 1. App Configuration ---
+# Set the page title, icon, and layout
+st.set_page_config(
+    page_title="Socio-Economic Dashboard",
+    page_icon="📈",
+    layout="wide"  # Use the full width of the page
+)
 
-# --- Block 2: AI Configuration (CRITICAL CHANGES) ---
-SYSTEM_PROMPT = """
-You are an automated data extraction bot.
-Your ONLY job is to find structured data and return it as a CSV.
-You MUST follow these rules:
-1.  The first line MUST be the CSV headers.
-2.  You MUST NOT add any introduction, explanation, or notes.
-3.  If you find no data, you MUST return the single string: "Error: No structured data found."
-4.  Do not use any formatting like markdown.
-"""
+# --- 2. Title and Introduction ---
+st.title("📈 Socio-Economic Insights Dashboard")
+st.write(
+    "An interactive tool to analyze and correlate data from the World Bank. "
+    "Select a country, two indicators, and a year range to begin."
+)
 
-# THIS IS THE CORRECT API URL FOR THIS ENVIRONMENT
-API_URL = "https://generativelen.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=AIzaSyAU6Z3CSRSS9XdcLn7TTTEQwUVSlGgUilg"
+# --- 3. Sidebar (User Controls) ---
+st.sidebar.header("Dashboard Controls")
 
-# THIS IS THE MOST IMPORTANT PART: LEAVE THE KEY EMPTY.
-# The server will provide it automatically. DO NOT PASTE YOUR OWN KEY.
-API_KEY = "AIzaSyAU6Z3CSRSS9XdcLn7TTTEQwUVSlGgUilg" 
+# Define the indicators you want to offer in a dictionary
+# Key: Readable Name, Value: World …
+[1:58 pm, 23/10/2025] Shivam: AttributeError: module 'wbdata' has no attribute 'search_countries'
 
-# --- Block 3: Asynchronous AI Call Function ---
-async def call_gemini(article_text):
-    """Makes an async call to the Gemini API to extract data."""
+File "D:\socio_economic_dashboard\venv\Lib\site-packages\streamlit\runtime\scriptrunner\exec_code.py", line 128, in exec_func_with_error_handling
+    result = func()
+File "D:\socio_economic_dashboard\venv\Lib\site-packages\streamlit\runtime\scriptrunner\script_runner.py", line 669, in code_to_exec
+    exec(code, module._dict_)  # noqa: S102
+    ~~^^^^^^^^^^^^^^^^^^^^^^^
+File "D:\socio_economic_dashboard\app.py", line 86, in <module>
+    country_names, country_codes = get_countries()
+                                   ~~~~~^^
+File "D:\socio_economic_dashboard\venv\Lib\site-packages\streamlit\runtime\caching\cache_utils.py", line 227, in _call_
+    return self._get_or_create_cached_value(args…
+[2:02 pm, 23/10/2025] Shivam: import streamlit as st
+import pandas as pd
+import plotly.express as px
+import wbgapi as wb  # <-- We are using the new library 'wbgapi'
+from datetime import datetime
+
+# --- 1. App Configuration ---
+st.set_page_config(
+    page_title="Socio-Economic Dashboard",
+    page_icon="📈",
+    layout="wide"
+)
+
+# --- 2. Title and Introduction ---
+st.title("📈 Socio-Economic Insights Dashboard")
+st.write(
+    "An interactive tool to analyze and correlate data from the World Bank. "
+    "Select a country, two indicators, and a year range to begin."
+)
+
+# --- 3. Sidebar (User Controls) ---
+st.sidebar.header("Dashboard Controls")
+
+# Define the indicators you want to offer in a dictionary
+INDICATORS_DB = {
+    "GDP per capita (current US$)": "NY.GDP.PCAP.CD",
+    "Female Literacy Rate (% ages 15+)": "SE.PRM.LITR.FE.ZS",
+    "Population, total": "SP.POP.TOTL",
+    "Unemployment, total (% of total labor force)": "SL.UEM.TOTL.ZS",
+    "Infant mortality rate (per 1,000 live births)": "SP.DYN.IMRT.IN",
+    "Life expectancy at birth, total (years)": "SP.DYN.LE00.IN",
+    "Access to electricity (% of population)": "EG.ELC.ACCS.ZS",
+    "CO2 emissions (metric tons per capita)": "EN.ATM.CO2E.PC"
+}
+indicator_names = list(INDICATORS_DB.keys())
+
+# --- Caching Functions (for performance) ---
+@st.cache_data
+def get_countries():
+    """Fetches and formats a list of countries and their codes from wbgapi."""
     
-    payload = {
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"parts": [{"text": article_text}]}],
-    }
-    
-    full_api_url = API_URL + API_KEY
-    
-    async with aiohttp.ClientSession() as session:
-        for i in range(3): # Max 3 retries
-            try:
-                async with session.post(full_api_url, json=payload, headers={'Content-Type': 'application/json'}) as response:
-                    
-                    if response.status != 200:
-                        # If we get a bad status, try to read the error message from Google
-                        error_text = await response.text()
-                        return f"Error: API call failed with status {response.status}. Response: {error_text}"
+    # -------------------------------------------------------------------
+    # THIS IS THE NEW, CORRECTED FUNCTION using wbgapi
+    # wb.economy.list() gets all economies (countries and regions)
+    countries = wb.economy.list()
+    # -------------------------------------------------------------------
 
-                    result_text = await response.text()
-                    
-                    try:
-                        result = json.loads(result_text)
-                    except json.JSONDecodeError:
-                        return f"Error: Failed to decode AI response. Response was: {result_text}"
+    # Filter out regions or aggregates that aren't countries
+    countries = [country for country in countries if country.get('region') != "Aggregates"]
 
-                    if result.get('candidates'):
-                        return result['candidates'][0]['content']['parts'][0]['text']
-                    else:
-                        if result.get('promptFeedback'):
-                             return f"Error: AI call blocked. Reason: {result['promptFeedback']['blockReason']}"
-                        return f"Error: Invalid API response structure. Response: {result_text}"
+    country_names = [country['value'] for country in countries]
+    # Create a mapping of country name to its 3-letter code (e.g., "India": "IND")
+    country_codes = {country['value']: country['id'] for country in countries}
+    return country_names, country_codes
 
-            except aiohttp.ClientError as e:
-                if i == 2:
-                    return f"Error: API call failed after retries. Check internet connection. {e}"
-                await asyncio.sleep(2**i)
-                
-    return "Error: Could not contact AI service after all retries."
-
-
-# --- Block 4: The Main Route (Handles everything) ---
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    # These variables will be sent to the HTML
-    extracted_data = ""
-    column_headers = []
-    graph_html = None
-    error_message = None
-
+@st.cache_data
+def get_data(country_code, data_date_range, indicators_dict):
+    """
+    Fetches data from the World Bank API using wbgapi.
+    """
     try:
-        if request.method == 'POST':
-            data_from_textarea = request.form.get('data_textarea', '')
-            chart_type = request.form.get('chart_type', 'bar')
-            x_col = request.form.get('x_col')
-            y_col = request.form.get('y_col')
-            
-            if 'extract_button' in request.form:
-                article_text = request.form['article_content']
-                if not article_text:
-                    raise Exception("Please paste an article first.")
-                
-                extracted_data = asyncio.run(call_gemini(article_text))
-                
-                if extracted_data.startswith('Error:'):
-                    raise Exception(extracted_data)
-                
-                try:
-                    df = pd.read_csv(io.StringIO(extracted_data))
-                    column_headers = df.columns.tolist()
-                except Exception as e:
-                    raise Exception(f"AI returned data, but Pandas couldn't read it. Error: {e} | AI Data: '{extracted_data}'")
+        # Get the API codes from our indicator dictionary
+        indicator_codes = list(indicators_dict.values())
+        
+        # -------------------------------------------------------------------
+        # THIS IS THE NEW, CORRECTED DATA-FETCHING FUNCTION
+        # wbgapi returns data in a "wide" format, so we must process it
+        df_wide = wb.data.DataFrame(
+            indicator_codes,
+            country_code,
+            time=data_date_range
+        )
+        # -------------------------------------------------------------------
 
-            elif 'visualize_button' in request.form:
-                if not data_from_textarea:
-                    raise Exception("Please extract data first.")
-                if not x_col or not y_col:
-                    raise Exception("Please select X-Axis and Y-Axis.")
+        # --- Data Processing to make it usable ---
+        # 1. Reset index to get 'economy' and 'time' as columns
+        df_wide = df_wide.reset_index()
+        
+        # 2. "Melt" the DataFrame from wide to long format
+        # This turns columns like 'YR2000', 'YR2001' into rows
+        df_long = df_wide.melt(id_vars=['economy', 'series'], var_name='Year', value_name='Value')
+        
+        # 3. Clean the 'Year' column (e.g., 'YR2000' -> 2000)
+        df_long['Year'] = df_long['Year'].str.replace('YR', '').astype(int)
+        
+        # 4. "Pivot" the table to get indicators as columns
+        # This is what we need for Plotly
+        df_final = df_long.pivot(
+            index=['economy', 'Year'],
+            columns='series',
+            values='Value'
+        ).reset_index()
 
-                extracted_data = data_from_textarea
-                data_file = io.StringIO(extracted_data)
-                df = pd.read_csv(data_file)
-                column_headers = df.columns.tolist()
-
-                fig = None
-                if chart_type == 'bar':
-                    fig = px.bar(df, x=x_col, y=y_col, title=f"Bar Chart of {y_col} by {x_col}")
-                elif chart_type == 'line':
-                    fig = px.line(df, x=x_col, y=y_col, title=f"Line Chart of {y_col} by {x_col}")
-                elif chart_type == 'pie':
-                    fig = px.pie(df, names=x_col, values=y_col, title=f"Pie Chart of {y_col}")
-                
-                if fig:
-                    fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-                    graph_html = fig.to_html(full_html=False)
-
+        # Rename columns from API codes to readable names
+        # Create a reverse map: {"NY.GDP...": "GDP per capita..."}
+        reverse_indicator_map = {v: k for k, v in indicators_dict.items()}
+        df_final = df_final.rename(columns=reverse_indicator_map)
+        
+        return df_final.sort_values('Year'), None  # Return data and no error
+        
     except Exception as e:
-        error_message = f"An error occurred: {e}"
+        # Return no data and the error message
+        return None, str(e)
 
-    return render_template('index_ai.html',
-                           graph_html=graph_html,
-                           extracted_data=extracted_data,
-                           column_headers=column_headers,
-                           error_message=error_message)
+# --- 4. Sidebar Widget Implementation ---
+country_names, country_codes = get_countries()
+current_year = datetime.now().year
 
-# --- Block 5: The "Run" Command ---
-if __name__ == '__main__':
-    app.run(debug=True)
+# Find the index for 'India' to set as default.
+try:
+    default_country_index = country_names.index("India")
+except ValueError:
+    default_country_index = 0  # Default to first country if India isn't found
+    
+selected_country_name = st.sidebar.selectbox(
+    "Select a Country",
+    country_names,
+    index=default_country_index
+)
+
+indicator_1_name = st.sidebar.selectbox(
+    "Select Indicator 1 (Trend 1 & Correlation X-axis)",
+    indicator_names,
+    index=0
+)
+
+indicator_2_name = st.sidebar.selectbox(
+    "Select Indicator 2 (Trend 2 & Correlation Y-axis)",
+    indicator_names,
+    index=1
+)
+
+start_year, end_year = st.sidebar.slider(
+    "Select Year Range",
+    1990,
+    current_year,
+    (2000, current_year - 1)
+)
+
+# --- 5. Data Fetching and Analysis ---
+if selected_country_name not in country_codes:
+    st.error("Please select a valid country from the list.")
+    st.stop()
+
+country_code = country_codes[selected_country_name]
+
+# Create the dictionary of only the indicators we want to fetch
+indicators_to_fetch = {
+    indicator_1_name: INDICATORS_DB[indicator_1_name],
+    indicator_2_name: INDICATORS_DB[indicator_2_name]
+}
+
+# Create the date range (e.g., range(2000, 2024))
+# wbgapi uses a range, which is exclusive of the end year, so add 1
+data_date_range = range(start_year, end_year + 1)
+
+# Call the data fetching function
+data, error = get_data(country_code, data_date_range, indicators_to_fetch)
+
+# --- 6. Main Page Display (Charts and Data) ---
+if error:
+    st.error(
+        f"Could not fetch data for {selected_country_name}. "
+        f"Error details: {error}"
+    )
+elif data is None or data.empty:
+    st.warning("No data found for the selected country, indicators, and year range.")
+else:
+    st.header(f"Analysis for {selected_country_name} ({start_year} - {end_year})")
+
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader(f"Trend: {indicator_1_name}")
+        fig1 = px.line(
+            data,
+            x='Year',
+            y=indicator_1_name,
+            title=f"{indicator_1_name} Over Time"
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+
+    with col2:
+        st.subheader(f"Trend: {indicator_2_name}")
+        fig2 = px.line(
+            data,
+            x='Year',
+            y=indicator_2_name,
+            title=f"{indicator_2_name} Over Time"
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+        
+    st.header("Correlation Analysis")
+    st.write(f"Is there a link between '{indicator_1_name}' and '{indicator_2_name}'?")
+    
+    # Drop rows where either indicator has missing data (NaN)
+    corr_data = data[[indicator_1_name, indicator_2_name]].dropna()
+    
+    if not corr_data.empty:
+        fig3 = px.scatter(
+            corr_data,
+            x=indicator_1_name,
+            y=indicator_2_name,
+            title=f"Correlation Plot",
+            trendline="ols"  # 'ols' adds a regression line
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+    else:
+        st.warning("Not enough overlapping data to show a correlation for these years.")
+    
+    with st.expander("Show Raw Data Table"):
+        st.dataframe(data)
