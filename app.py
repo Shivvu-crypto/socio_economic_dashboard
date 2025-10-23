@@ -136,8 +136,12 @@ if selected_country_name not in country_codes:
 country_code = country_codes[selected_country_name]
 
 # Create the dictionary of only the indicators we want to fetch
+#
+# !!!!!!!!!!!!!!!!!!
+# THIS WAS THE BUG. IT IS NOW FIXED.
+# !!!!!!!!!!!!!!!!!!
 indicators_to_fetch = {
-    indicator_1_name: INDICATORSDB[indicator_1_name],
+    indicator_1_name: INDICATORS_DB[indicator_1_name],
     indicator_2_name: INDICATORS_DB[indicator_2_name]
 }
 
