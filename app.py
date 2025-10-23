@@ -1,4 +1,4 @@
- import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import wbdata  # World Bank data API client
@@ -248,4 +248,5 @@ else:
     
     with st.expander("Show Raw Data Table"):
         st.dataframe(data)
+
 
