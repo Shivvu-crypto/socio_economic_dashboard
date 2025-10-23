@@ -37,12 +37,8 @@ indicator_names = list(INDICATORS_DB.keys())
 # --- Caching Functions (for performance) ---
 @st.cache_data
 def get_countries():
-    """
-    Fetches and formats a list of countries and their codes from wbgapi.
-    (Fixes AttributeError)
-    """
+    """Fetches and formats a list of countries and their codes from wbgapi."""
     countries = wb.economy.list()
-    # Filter out regions/aggregates
     countries = [country for country in countries if country.get('region') != "Aggregates"]
     country_names = [country['value'] for country in countries]
     country_codes = {country['value']: country['id'] for country in countries}
@@ -57,8 +53,7 @@ def get_data(country_code, data_date_range, indicators_dict):
     try:
         indicator_codes = list(indicators_dict.values())
         
-        # FIX (v8): Create a safe list of strings for the API
-        # This fixes JSONDecodeError and Resource not found.
+        # Create a safe list of strings for the API
         time_list = [str(year) for year in data_date_range]
         
         df_wide = wb.data.DataFrame(
@@ -69,24 +64,20 @@ def get_data(country_code, data_date_range, indicators_dict):
 
         # --- Data Processing Pipeline ---
         
-        # --- FINAL FIX (v10) ---
-        # We must check if the DataFrame is empty before processing it.
-        # If we don't, it will cause an IndexError on df_wide.columns[0].
+        # Check for empty data before processing
         if df_wide.empty:
             return None, None  # Return (None, None) to signal "no data"
-        # --- END FINAL FIX ---
 
         df_wide = df_wide.reset_index()
 
-        # FIX (v9): Robustly rename columns.
-        # This fixes KeyError: [economy] AND .str accessor error.
+        # Robustly rename columns
         rename_map = {
             df_wide.columns[0]: 'Country',
             df_wide.columns[1]: 'Year'  # The time column is numeric
         }
         df_wide = df_wide.rename(columns=rename_map)
 
-        # Ensure 'Year' is an integer (it's already numeric, no .str needed)
+        # Ensure 'Year' is an integer
         df_wide['Year'] = df_wide['Year'].astype(int)
         
         # Melt from wide to long
@@ -96,6 +87,12 @@ def get_data(country_code, data_date_range, indicators_dict):
             value_name='Value'
         )
         
+        # --- FINAL FIX (v11) ---
+        # We must remove duplicates before pivoting, or pandas will crash
+        # with a "duplicate entries" error (which can show as a deep library error).
+        df_long = df_long.drop_duplicates(subset=['Country', 'Year', 'series'])
+        # --- END FINAL FIX ---
+
         # Pivot back to get indicators as columns
         df_final = df_long.pivot(
             index=['Country', 'Year'],
@@ -158,19 +155,19 @@ if selected_country_name not in country_codes:
 
 country_code = country_codes[selected_country_name]
 
-# FIX: NameError: INDICATORSDB (fixed)
 indicators_to_fetch = {
     indicator_1_name: INDICATORS_DB[indicator_1_name],
     indicator_2_name: INDICATORS_DB[indicator_2_name]
 }
 
-# Create the safe range() object to pass to our function
+# We create the safe range() object to pass to our function
 data_date_range = range(start_year, end_year + 1)
 
 # Call our robust data fetching function
 data, error = get_data(country_code, data_date_range, indicators_to_fetch)
 
 # --- 6. Main Page Display (Charts and Data) ---
+# This is line 191 (approx)
 if error:
     # This catches any error string returned from get_data()
     st.error(
@@ -178,7 +175,7 @@ if error:
         f"Error details: {error}"
     )
 elif data is None or data.empty:
-    # This catches the (None, None) from our (v10) fix
+    # This catches the (None, None) from our "no data" check
     st.warning(f"No data found for {selected_country_name} for these indicators in this year range.")
 else:
     # This is the "Success" path, only runs if data is valid
