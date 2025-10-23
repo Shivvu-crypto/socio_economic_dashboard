@@ -73,25 +73,30 @@ def get_data(country_code, data_date_range, indicators_dict):
         # Robustly rename columns
         rename_map = {
             df_wide.columns[0]: 'Country',
-            df_wide.columns[1]: 'Year'  # The time column is numeric
+            df_wide.columns[1]: 'TimeStr'  # Rename to 'TimeStr' first
         }
         df_wide = df_wide.rename(columns=rename_map)
-
-        # Ensure 'Year' is an integer
-        df_wide['Year'] = df_wide['Year'].astype(int)
         
+        # --- FINAL FIX (v12) ---
+        # This fixes the deep crash (ValueError/str accessor error)
+        # The 'TimeStr' column can be 'YR2000' (text) or '2000' (numeric)
+        
+        # 1. Force the 'TimeStr' column to be a string, no matter what.
+        df_wide['TimeStr'] = df_wide['TimeStr'].astype(str)
+        
+        # 2. Now that we are 100% sure it's a string, we can safely replace 'YR'
+        df_wide['Year'] = df_wide['TimeStr'].str.replace('YR', '').astype(int)
+        # --- END FINAL FIX ---
+
         # Melt from wide to long
         df_long = df_wide.melt(
-            id_vars=['Country', 'Year'],
+            id_vars=['Country', 'Year'], # Use our new, clean 'Year' column
             var_name='series',
             value_name='Value'
         )
         
-        # --- FINAL FIX (v11) ---
-        # We must remove duplicates before pivoting, or pandas will crash
-        # with a "duplicate entries" error (which can show as a deep library error).
+        # Remove duplicates before pivoting
         df_long = df_long.drop_duplicates(subset=['Country', 'Year', 'series'])
-        # --- END FINAL FIX ---
 
         # Pivot back to get indicators as columns
         df_final = df_long.pivot(
@@ -164,21 +169,18 @@ indicators_to_fetch = {
 data_date_range = range(start_year, end_year + 1)
 
 # Call our robust data fetching function
+# This is line 188 (approx)
 data, error = get_data(country_code, data_date_range, indicators_to_fetch)
 
 # --- 6. Main Page Display (Charts and Data) ---
-# This is line 191 (approx)
 if error:
-    # This catches any error string returned from get_data()
     st.error(
         f"Could not fetch data for {selected_country_name}. "
         f"Error details: {error}"
     )
 elif data is None or data.empty:
-    # This catches the (None, None) from our "no data" check
     st.warning(f"No data found for {selected_country_name} for these indicators in this year range.")
 else:
-    # This is the "Success" path, only runs if data is valid
     st.header(f"Analysis for {selected_country_name} ({start_year} - {end_year})")
 
     col1, col2 = st.columns(2)
@@ -206,7 +208,6 @@ else:
     st.header("Correlation Analysis")
     st.write(f"Is there a link between '{indicator_1_name}' and '{indicator_2_name}'?")
     
-    # Drop rows where either indicator is missing
     corr_data = data[[indicator_1_name, indicator_2_name]].dropna()
     
     if not corr_data.empty:
@@ -215,7 +216,7 @@ else:
             x=indicator_1_name,
             y=indicator_2_name,
             title=f"Correlation Plot",
-            trendline="ols"  # 'ols' adds a regression line
+            trendline="ols"
         )
         st.plotly_chart(fig3, use_container_width=True)
     else:
