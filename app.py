@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import wbgapi as wb  # The correct, working library
+import wbgapi as wb
 from datetime import datetime
-from json import JSONDecodeError  # To catch specific API errors
+from json import JSONDecodeError
 
 # --- 1. App Configuration ---
-# Set the page to be wide, add a title and icon
 st.set_page_config(
     page_title="Socio-Economic Dashboard",
     page_icon="📈",
@@ -23,9 +22,6 @@ st.write(
 # --- 3. Sidebar (User Controls) ---
 st.sidebar.header("Dashboard Controls")
 
-# Define the indicators you want to offer in a dictionary
-# Keys = Readable Names, Values = World Bank API Codes
-# BUG FIX: NameError: INDICATORSDB -> INDICATORS_DB (fixed)
 INDICATORS_DB = {
     "GDP per capita (current US$)": "NY.GDP.PCAP.CD",
     "Female Literacy Rate (% ages 15+)": "SE.PRM.LITR.FE.ZS",
@@ -36,111 +32,99 @@ INDICATORS_DB = {
     "Access to electricity (% of population)": "EG.ELC.ACCS.ZS",
     "CO2 emissions (metric tons per capita)": "EN.ATM.CO2E.PC"
 }
-# Create a list of just the names for the dropdown
 indicator_names = list(INDICATORS_DB.keys())
 
 # --- Caching Functions (for performance) ---
-# @st.cache_data tells Streamlit to run this function only once and save the result.
 @st.cache_data
 def get_countries():
     """
     Fetches and formats a list of countries and their codes from wbgapi.
-    BUG FIX: AttributeError: get_country/search_countries -> wb.economy.list() (fixed)
+    (Fixes AttributeError)
     """
     countries = wb.economy.list()
-    
-    # Filter out regions or aggregates (like "World", "Euro Area")
+    # Filter out regions/aggregates
     countries = [country for country in countries if country.get('region') != "Aggregates"]
-
-    # Get a list of just the names
     country_names = [country['value'] for country in countries]
-    
-    # Create a mapping of country name to its 3-letter code (e.g., "India": "IND")
     country_codes = {country['value']: country['id'] for country in countries}
     return country_names, country_codes
 
 @st.cache_data
 def get_data(country_code, data_date_range, indicators_dict):
     """
-    Fetches data from the World Bank API using wbgapi.
-    This is the robust version that fixes all previous data-related bugs.
+    Fetches and processes data from the World Bank API.
+    This function is now robust and handles all known bugs.
     """
     try:
-        # Get the API codes from our indicator dictionary (e.g., ['NY.GDP.PCAP.CD', ...])
         indicator_codes = list(indicators_dict.values())
         
-        # --- BUG FIX (v8) ---
+        # FIX (v8): Create a safe list of strings for the API
         # This fixes JSONDecodeError and Resource not found.
-        # We convert the range() object into a safe, explicit list of strings:
-        # e.g., ['2000', '2001', '2002', ..., '2023']
-        # The API cannot misinterpret this.
         time_list = [str(year) for year in data_date_range]
         
         df_wide = wb.data.DataFrame(
             indicator_codes,
             country_code,
-            time=time_list  # Use the safe list of strings
+            time=time_list
         )
 
         # --- Data Processing Pipeline ---
         
-        # 1. Reset index. This turns the MultiIndex (country, time) into columns.
+        # --- FINAL FIX (v10) ---
+        # We must check if the DataFrame is empty before processing it.
+        # If we don't, it will cause an IndexError on df_wide.columns[0].
+        if df_wide.empty:
+            return None, None  # Return (None, None) to signal "no data"
+        # --- END FINAL FIX ---
+
         df_wide = df_wide.reset_index()
 
-        # 2. ROBUSTLY rename the first two columns.
-        # BUG FIX: KeyError: [economy] -> This logic is now robust (fixed)
-        # We don't assume names; we just take the first two columns.
+        # FIX (v9): Robustly rename columns.
+        # This fixes KeyError: [economy] AND .str accessor error.
         rename_map = {
             df_wide.columns[0]: 'Country',
-            df_wide.columns[1]: 'TimeStr'  # e.g., 'YR2000'
+            df_wide.columns[1]: 'Year'  # The time column is numeric
         }
         df_wide = df_wide.rename(columns=rename_map)
 
-        # 3. "Melt" the DataFrame from wide to long format.
+        # Ensure 'Year' is an integer (it's already numeric, no .str needed)
+        df_wide['Year'] = df_wide['Year'].astype(int)
+        
+        # Melt from wide to long
         df_long = df_wide.melt(
-            id_vars=['Country', 'TimeStr'],
-            var_name='series',  # This column will have the API codes
-            value_name='Value'  # This column will have the data
+            id_vars=['Country', 'Year'],
+            var_name='series',
+            value_name='Value'
         )
         
-        # 4. Clean the 'Year' column (e.g., 'YR2000' -> 2000)
-        df_long['Year'] = df_long['TimeStr'].str.replace('YR', '').astype(int)
-        
-        # 5. "Pivot" the table to get indicators back as columns.
+        # Pivot back to get indicators as columns
         df_final = df_long.pivot(
             index=['Country', 'Year'],
             columns='series',
             values='Value'
         ).reset_index()
 
-        # 6. Rename indicator columns from codes back to readable names
+        # Rename columns to readable names
         reverse_indicator_map = {v: k for k, v in indicators_dict.items()}
         df_final = df_final.rename(columns=reverse_indicator_map)
         
-        # Return the clean data and no error
-        return df_final.sort_values('Year'), None
+        return df_final.sort_values('Year'), None  # Return data and no error
     
     except JSONDecodeError as e:
-        # Catch the specific error if the API sends bad JSON
         return None, (
-            "JSONDecodeError: The World Bank API sent back a broken response. "
-            "This can happen if the API is temporarily down. "
-            f"Details: {e}"
+            f"JSONDecodeError: The API sent back a broken response. {e}"
         )
     except Exception as e:
-        # Catch all other errors (e.g., "Resource not found")
+        # Catch all other errors
         return None, str(e)
 
 # --- 4. Sidebar Widget Implementation ---
-# Load the country list (this will be cached after the first run)
 country_names, country_codes = get_countries()
 current_year = datetime.now().year
 
-# Set "India" as the default selection
 try:
     default_country_index = country_names.index("India")
 except ValueError:
-    default_country_index = 0  # Default to first country if India isn't found
+    default_country_index = 0
     
 selected_country_name = st.sidebar.selectbox(
     "Select a Country",
@@ -151,60 +135,55 @@ selected_country_name = st.sidebar.selectbox(
 indicator_1_name = st.sidebar.selectbox(
     "Select Indicator 1 (Trend 1 & Correlation X-axis)",
     indicator_names,
-    index=0  # Default to 'GDP per capita'
+    index=0
 )
 
 indicator_2_name = st.sidebar.selectbox(
     "Select Indicator 2 (Trend 2 & Correlation Y-axis)",
     indicator_names,
-    index=1  # Default to 'Female Literacy Rate'
+    index=1
 )
 
-# Year range slider
 start_year, end_year = st.sidebar.slider(
     "Select Year Range",
-    1990,                # Min year
-    current_year,        # Max year
-    (2000, current_year - 1) # Default range
+    1990,
+    current_year,
+    (2000, current_year - 1)
 )
 
 # --- 5. Data Fetching and Analysis ---
-# Stop the app if the user hasn't selected a valid country
 if selected_country_name not in country_codes:
     st.error("Please select a valid country from the list.")
     st.stop()
 
-# Get the 3-letter code for the selected country
 country_code = country_codes[selected_country_name]
 
-# Create the dictionary of only the two indicators we want to fetch
+# FIX: NameError: INDICATORSDB (fixed)
 indicators_to_fetch = {
     indicator_1_name: INDICATORS_DB[indicator_1_name],
     indicator_2_name: INDICATORS_DB[indicator_2_name]
 }
 
-# We create the safe range() object to pass to our function
+# Create the safe range() object to pass to our function
 data_date_range = range(start_year, end_year + 1)
 
-# Call the data fetching function
+# Call our robust data fetching function
 data, error = get_data(country_code, data_date_range, indicators_to_fetch)
 
 # --- 6. Main Page Display (Charts and Data) ---
-
-# First, check if the 'error' variable contains anything.
 if error:
+    # This catches any error string returned from get_data()
     st.error(
         f"Could not fetch data for {selected_country_name}. "
         f"Error details: {error}"
     )
-# Next, check if the data is empty (this is not an error)
 elif data is None or data.empty:
+    # This catches the (None, None) from our (v10) fix
     st.warning(f"No data found for {selected_country_name} for these indicators in this year range.")
-# If no errors and data is not empty, show the charts!
 else:
+    # This is the "Success" path, only runs if data is valid
     st.header(f"Analysis for {selected_country_name} ({start_year} - {end_year})")
 
-    # Create two columns for the trend charts
     col1, col2 = st.columns(2)
     
     with col1:
@@ -227,11 +206,10 @@ else:
         )
         st.plotly_chart(fig2, use_container_width=True)
         
-    # Create the correlation plot
     st.header("Correlation Analysis")
     st.write(f"Is there a link between '{indicator_1_name}' and '{indicator_2_name}'?")
     
-    # Prep data: drop any rows where EITHER indicator is missing
+    # Drop rows where either indicator is missing
     corr_data = data[[indicator_1_name, indicator_2_name]].dropna()
     
     if not corr_data.empty:
@@ -244,9 +222,7 @@ else:
         )
         st.plotly_chart(fig3, use_container_width=True)
     else:
-        # This is a safe fallback, not an error
         st.warning("Not enough overlapping data to show a correlation for these years.")
     
-    # Add an expander to show the raw data table
     with st.expander("Show Raw Data Table"):
         st.dataframe(data)
