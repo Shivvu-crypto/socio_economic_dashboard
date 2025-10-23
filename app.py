@@ -125,7 +125,7 @@ def get_data(country_code, data_date_range, indicators_dict):
 
 # --- 4. Sidebar Widget Implementation ---
 country_names, country_codes = get_countries()
-current_.year = datetime.now().year
+current_year = datetime.now().year
 
 try:
     default_country_index = country_names.index("India")
@@ -215,11 +215,12 @@ else:
     
     if not corr_data.empty:
         fig3 = px.scatter(
-            corr_data,
+            data,
             x=indicator_1_name,
             y=indicator_2_name,
             title=f"Correlation Plot",
-            trendline="ols"
+            trendline="ols",
+            hover_data=['Year'] # Show the year on hover
         )
         st.plotly_chart(fig3, use_container_width=True)
     else:
