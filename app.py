@@ -78,18 +78,11 @@ def get_data(country_code, data_date_range, indicators_dict):
         }
         df_wide = df_wide.rename(columns=rename_map)
         
-        # --- FINAL FIX (v14) ---
-        # This fixes the "int('nan')" error.
-        # We must drop rows where the time is missing (NaN)
-        # before we try to convert it.
+        # Drop rows where time is missing
         df_wide = df_wide.dropna(subset=['TimeStr'])
-        # --- END FINAL FIX ---
 
-        # Now we safely clean the 'TimeStr' column
-        # 1. Force it to be a string
+        # Safely clean the 'TimeStr' column
         df_wide['TimeStr'] = df_wide['TimeStr'].astype(str)
-        
-        # 2. Now we can safely replace 'YR' and convert to int
         df_wide['Year'] = df_wide['TimeStr'].str.replace('YR', '').astype(int)
 
         # Melt from wide to long
@@ -125,7 +118,11 @@ def get_data(country_code, data_date_range, indicators_dict):
 
 # --- 4. Sidebar Widget Implementation ---
 country_names, country_codes = get_countries()
+
+# --- THIS IS THE FIX (Line 128 approx) ---
+# I wrote 'current_.year' before. It is now 'current_year'.
 current_year = datetime.now().year
+# --- END FIX ---
 
 try:
     default_country_index = country_names.index("India")
